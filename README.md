@@ -16,7 +16,7 @@ This project investigates **how observation reconstruction influences DreamerV3'
 
 To get started from inside a **google collab notebook** run the follwing commands:
 
-'''
+```
 !git clone git@github.com:NathanLeonidas/RL_reconstruction_abstraction.git
 %cd /content/RL_reconstruction_abstraction.git
 !grep -v -E '^(ale_py|autorom)' requirements.txt > requirements_colab.txt
@@ -25,7 +25,7 @@ python dreamerv3/main.py \
   --logdir ~/logdir/dreamer/{timestamp} \
   --configs crafter \
   --run.train_ratio 32
-'''
+```
 
 ## Approach
 
