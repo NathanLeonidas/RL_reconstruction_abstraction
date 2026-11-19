@@ -12,6 +12,21 @@ World models allow reinforcement learning agents to simulate future trajectories
 
 This project investigates **how observation reconstruction influences DreamerV3's learning performance when observations contain irrelevant information**.
 
+## Quickstart
+
+To get started from inside a **google collab notebook** run the follwing commands:
+
+'''
+!git clone git@github.com:NathanLeonidas/RL_reconstruction_abstraction.git
+%cd /content/RL_reconstruction_abstraction.git
+!grep -v -E '^(ale_py|autorom)' requirements.txt > requirements_colab.txt
+!pip install -U -r requirements_colab.txt
+python dreamerv3/main.py \
+  --logdir ~/logdir/dreamer/{timestamp} \
+  --configs crafter \
+  --run.train_ratio 32
+'''
+
 ## Approach
 
 We will modify DreamerV3's prediction loss by introducing a weight $w$ on its observation reconstruction term. We will then compare different values of $w$ while adding varying numbers of **random, predictable, or constant distractors** to the agent's observations.
