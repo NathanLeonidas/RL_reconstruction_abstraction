@@ -243,7 +243,22 @@ def make_env(config, index, **overrides):
   if kwargs.pop('use_logdir', False):
     kwargs['logdir'] = elements.Path(config.logdir) / f'env{index}'
   env = ctor(task, **kwargs)
+  env = add_distractors(env, config, index)
   return wrap_env(env, config)
+
+
+def add_distractors(env, config, index):
+  dcfg = config.distractors
+  if dcfg.type == 'none':
+    if dcfg.k != 0:
+      raise ValueError('distractors.k > 0 requires a distractors.type.')
+    return env
+  if dcfg.k < 1:
+    raise ValueError(f'distractors.type={dcfg.type} requires distractors.k > 0')
+  from embodied.envs.distractors import Distractors
+  return Distractors(
+      env, dcfg.type, dcfg.k, config.seed, index,
+      period_min=dcfg.period_min, period_max=dcfg.period_max)
 
 
 def wrap_env(env, config):
