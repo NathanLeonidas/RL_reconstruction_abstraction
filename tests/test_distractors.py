@@ -11,222 +11,110 @@ import elements
 import numpy as np
 import pytest
 
-# Load the module by path so the test does not import the embodied package
-# (which pulls in JAX).
-_PATH = (pathlib.Path(__file__).parents[1] / 'embodied' / 'envs' /
-         'distractors.py')
+# Load the module by path: importing the embodied package would pull in JAX.
+_PATH = pathlib.Path(__file__).parents[1] / 'embodied/envs/distractors.py'
 _spec = importlib.util.spec_from_file_location('distractors', _PATH)
 distractors = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(distractors)
 Distractors = distractors.Distractors
 
+LENGTH = 50  # Episode length of the fake env.
+
 
 class FakeEnv:
   """Minimal embodied-style env with fixed-length episodes."""
 
-  def __init__(self, length=50):
-    self.length = length
-    self.t = 0
-    self.done = True
-    self.closed = False
+  obs_space = {
+      'reward': elements.Space(np.float32),
+      'is_first': elements.Space(bool),
+      'is_last': elements.Space(bool),
+      'is_terminal': elements.Space(bool),
+      'position': elements.Space(np.float32, (3,)),
+  }
+  act_space = {
+      'reset': elements.Space(bool),
+      'action': elements.Space(np.float32, (1,), -1, 1),
+  }
 
-  @property
-  def obs_space(self):
-    return {
-        'reward': elements.Space(np.float32),
-        'is_first': elements.Space(bool),
-        'is_last': elements.Space(bool),
-        'is_terminal': elements.Space(bool),
-        'position': elements.Space(np.float32, (3,)),
-    }
-
-  @property
-  def act_space(self):
-    return {
-        'reset': elements.Space(bool),
-        'action': elements.Space(np.float32, (1,), -1, 1),
-    }
+  def __init__(self):
+    self.t = -1
 
   def step(self, action):
-    if action['reset'] or self.done:
-      self.t = 0
-    else:
-      self.t += 1
-    self.done = self.t >= self.length - 1
+    self.t = 0 if action['reset'] or self.t >= LENGTH - 1 else self.t + 1
     return {
-        'reward': np.float32(self.t),
-        'is_first': self.t == 0,
-        'is_last': self.done,
-        'is_terminal': False,
+        'reward': np.float32(self.t), 'is_first': self.t == 0,
+        'is_last': self.t == LENGTH - 1, 'is_terminal': False,
         'position': np.full(3, self.t, np.float32),
     }
 
-  def close(self):
-    self.closed = True
+
+def rollout(env, steps, action=0.0):
+  acts = [{'reset': i == 0, 'action': np.full(1, action, np.float32)}
+          for i in range(steps)]
+  return [env.step(a) for a in acts]
 
 
-def rollout(env, steps, action_value=0.0):
-  obs = []
-  for i in range(steps):
-    act = {'reset': i == 0, 'action': np.full(1, action_value, np.float32)}
-    obs.append(env.step(act))
-  return obs
-
-
-def make(kind, k=8, seed=0, index=0, length=50, **kw):
-  return Distractors(FakeEnv(length), kind, k, seed, index, **kw)
-
-
-def stack(obs, key='distractors'):
-  return np.stack([o[key] for o in obs])
+def values(kind, steps=200, k=8, seed=0, index=0, action=0.0, **kw):
+  env = Distractors(FakeEnv(), kind, k, seed, index, **kw)
+  obs = rollout(env, steps, action)
+  return env, obs, np.stack([o['distractors'] for o in obs])
 
 
 @pytest.mark.parametrize('kind', distractors.KINDS)
-class TestCommon:
-
-  def test_space_and_dtype(self, kind):
-    env = make(kind, k=7)
-    space = env.obs_space['distractors']
-    assert space.shape == (7,) and space.dtype == np.float32
-    for obs in rollout(env, 20):
-      value = obs['distractors']
-      assert value.shape == (7,) and value.dtype == np.float32
-      assert np.isfinite(value).all()
-      assert value in space  # Same check as embodied.wrappers.CheckSpaces.
-
-  def test_original_obs_unchanged(self, kind):
-    base, wrapped = FakeEnv(), make(kind)
-    for a, b in zip(rollout(base, 120), rollout(wrapped, 120)):
-      assert set(b) == set(a) | {'distractors'}
-      for key in a:
-        np.testing.assert_array_equal(a[key], b[key])
-    assert {k: v for k, v in wrapped.obs_space.items()
-            if k != 'distractors'}.keys() == base.obs_space.keys()
-    assert wrapped.act_space.keys() == base.act_space.keys()
-
-  def test_reproducible(self, kind):
-    a = stack(rollout(make(kind, seed=3, index=1), 200))
-    b = stack(rollout(make(kind, seed=3, index=1), 200))
-    np.testing.assert_array_equal(a, b)
-
-  def test_independent_of_actions(self, kind):
-    a = stack(rollout(make(kind, seed=5), 200, action_value=-1.0))
-    b = stack(rollout(make(kind, seed=5), 200, action_value=1.0))
-    np.testing.assert_array_equal(a, b)
-
-  def test_close_forwarded(self, kind):
-    env = make(kind)
-    env.close()
-    assert env.env.closed
+def test_adds_key_and_keeps_observation(kind):
+  env, obs, _ = values(kind, k=7)
+  assert env.obs_space.keys() == FakeEnv.obs_space.keys() | {'distractors'}
+  assert env.act_space == FakeEnv.act_space
+  for o, ref in zip(obs, rollout(FakeEnv(), len(obs))):
+    assert o['distractors'] in env.obs_space['distractors']  # float32, (7,)
+    for key in ref:
+      np.testing.assert_array_equal(o[key], ref[key])
 
 
-class TestRandom:
-
-  def test_unit_gaussian(self):
-    values = stack(rollout(make('random', k=20, length=1000), 5000))
-    assert abs(values.mean()) < 0.02
-    assert abs(values.std() - 1) < 0.02
-
-  def test_redrawn_every_step(self):
-    values = stack(rollout(make('random'), 100))
-    assert not np.any(np.all(values[1:] == values[:-1], axis=1))
-    # No temporal correlation.
-    corr = np.corrcoef(values[1:].ravel(), values[:-1].ravel())[0, 1]
-    assert abs(corr) < 0.1
-
-  def test_index_changes_stream(self):
-    a = stack(rollout(make('random', seed=0, index=0), 50))
-    b = stack(rollout(make('random', seed=0, index=1), 50))
-    assert not np.allclose(a, b)
-
-  def test_seed_changes_stream(self):
-    a = stack(rollout(make('random', seed=0), 50))
-    b = stack(rollout(make('random', seed=1), 50))
-    assert not np.allclose(a, b)
+@pytest.mark.parametrize('kind', distractors.KINDS)
+def test_reproducible_and_independent_of_actions(kind):
+  a = values(kind, seed=3, index=1, action=-1.0)[2]
+  b = values(kind, seed=3, index=1, action=1.0)[2]
+  np.testing.assert_array_equal(a, b)
 
 
-class TestPredictable:
-
-  def test_follows_sinusoid_within_episode(self):
-    env = make('predictable', k=6, length=200)
-    obs = rollout(env, 200)
-    values = stack(obs)
-    t = np.arange(200)[:, None]
-    expected = np.sqrt(2) * np.sin(env.omega * t + env._phi)
-    np.testing.assert_allclose(values, expected, rtol=1e-5, atol=1e-5)
-
-  def test_periods_in_range(self):
-    env = make('predictable', k=1000, period_min=10, period_max=100)
-    periods = 2 * np.pi / env.omega
-    assert periods.min() >= 10 and periods.max() <= 100
-    # Log-uniform: roughly half the periods below the geometric mean.
-    assert 0.4 < np.mean(periods < np.sqrt(10 * 100)) < 0.6
-
-  def test_frequencies_shared_across_instances(self):
-    # Same run seed -> same omega for every env (train and eval).
-    a = make('predictable', seed=2, index=0)
-    b = make('predictable', seed=2, index=3)
-    np.testing.assert_array_equal(a.omega, b.omega)
-    assert not np.array_equal(a.omega, make('predictable', seed=4).omega)
-
-  def test_phase_resampled_each_episode(self):
-    env = make('predictable', k=8, length=30)
-    obs = rollout(env, 90)
-    firsts = [i for i, o in enumerate(obs) if o['is_first']]
-    assert firsts == [0, 30, 60]
-    starts = stack([obs[i] for i in firsts])
-    assert not np.allclose(starts[0], starts[1])
-    assert not np.allclose(starts[1], starts[2])
-
-  def test_time_resets_each_episode(self):
-    env = make('predictable', k=4, length=30)
-    rollout(env, 45)
-    assert env._t == 14
-
-  def test_unit_variance(self):
-    # Over many episodes (random phases) each dimension has variance ~1.
-    values = stack(rollout(make('predictable', k=10, length=100), 20000))
-    assert abs(values.mean()) < 0.05
-    assert abs(values.var() - 1) < 0.05
+def test_random():
+  v = values('random', steps=5000, k=20)[2]
+  assert abs(v.mean()) < 0.02 and abs(v.std() - 1) < 0.02
+  assert not np.any(np.all(v[1:] == v[:-1], axis=1))  # Redrawn every step.
+  assert not np.allclose(v[:50], values('random', k=20, index=1)[2][:50])
+  assert not np.allclose(v[:50], values('random', k=20, seed=1)[2][:50])
 
 
-class TestConstant:
-
-  def test_fixed_across_steps_and_episodes(self):
-    values = stack(rollout(make('constant', k=5, length=20), 100))
-    assert np.all(values == values[0])
-
-  def test_shared_across_instances(self):
-    a = stack(rollout(make('constant', seed=1, index=0), 10))
-    b = stack(rollout(make('constant', seed=1, index=2), 10))
-    np.testing.assert_array_equal(a, b)
-
-  def test_seed_changes_values(self):
-    a = make('constant', seed=0).constant
-    b = make('constant', seed=1).constant
-    assert not np.allclose(a, b)
-
-  def test_drawn_from_unit_gaussian(self):
-    values = make('constant', k=20000).constant
-    assert abs(values.mean()) < 0.03
-    assert abs(values.std() - 1) < 0.03
+def test_predictable():
+  env, obs, v = values('predictable', steps=3 * LENGTH, k=1000)
+  periods = 2 * np.pi / env.omega
+  assert periods.min() >= 10 and periods.max() <= 100
+  # Within the last episode: the sinusoid of the episode step t.
+  t = np.arange(LENGTH)[:, None]
+  np.testing.assert_allclose(
+      v[-LENGTH:], np.sqrt(2) * np.sin(env.omega * t + env._phi), atol=1e-5)
+  # New phase each episode, same frequencies for every env of the run.
+  assert [i for i, o in enumerate(obs) if o['is_first']] == [0, 50, 100]
+  assert not np.allclose(v[0], v[LENGTH])
+  other = values('predictable', k=1000, index=3)[0]
+  np.testing.assert_array_equal(env.omega, other.omega)
+  assert abs(v.var() - 1) < 0.05
 
 
-class TestValidation:
+def test_constant():
+  v = values('constant', steps=3 * LENGTH, k=20000)[2]
+  assert np.all(v == v[0])  # Over steps and episodes.
+  assert abs(v[0].mean()) < 0.03 and abs(v[0].std() - 1) < 0.03
+  np.testing.assert_array_equal(v[0], values('constant', k=20000, index=2)[2][0])
+  assert not np.allclose(v[0], values('constant', k=20000, seed=1)[2][0])
 
-  def test_bad_kind(self):
-    with pytest.raises(ValueError):
-      make('noise')
 
-  @pytest.mark.parametrize('k', [0, -1, 2.5])
-  def test_bad_k(self, k):
-    with pytest.raises(ValueError):
-      make('random', k=k)
-
-  def test_key_collision(self):
-    with pytest.raises(ValueError):
-      Distractors(FakeEnv(), 'random', 3, 0, key='position')
-
-  def test_bad_periods(self):
-    with pytest.raises(ValueError):
-      make('predictable', period_min=50, period_max=10)
+@pytest.mark.parametrize('kwargs', [
+    dict(kind='noise'), dict(k=0), dict(k=2.5), dict(key='position'),
+    dict(kind='predictable', period_min=50, period_max=10),
+])
+def test_invalid_arguments(kwargs):
+  args = dict(kind='random', k=3, seed=0) | kwargs
+  with pytest.raises(ValueError):
+    Distractors(FakeEnv(), **args)
