@@ -14,17 +14,16 @@ This project investigates **how observation reconstruction influences DreamerV3'
 
 ## Quickstart
 
-To get started from inside a **google collab notebook** run the follwing commands:
+To get started from inside a **Google Colab notebook** (runtime `2026.07`,
+Python 3.12: `dm_control`/`labmaze` do not build on Python 3.13), run:
 
 ```
-!git clone git@github.com:NathanLeonidas/RL_reconstruction_abstraction.git
-%cd /content/RL_reconstruction_abstraction.git
+!git clone https://github.com/NathanLeonidas/RL_reconstruction_abstraction.git
+%cd /content/RL_reconstruction_abstraction
 !grep -v -E '^(ale_py|autorom)' requirements.txt > requirements_colab.txt
 !pip install -U -r requirements_colab.txt
-python dreamerv3/main.py \
-  --logdir ~/logdir/dreamer/{timestamp} \
-  --configs crafter \
-  --run.train_ratio 32
+!pip install dm_control
+!apt-get install -y -qq libosmesa6 libgl1-mesa-glx
 ```
 
 ## Approach
@@ -32,6 +31,27 @@ python dreamerv3/main.py \
 We will modify DreamerV3's prediction loss by introducing a weight $w$ on its observation reconstruction term. We will then compare different values of $w$ while adding varying numbers of **random, predictable, or constant distractors** to the agent's observations.
 
 Our primary environment will be **Cartpole Swingup** from the [DeepMind Control Suite](https://github.com/google-deepmind/dm_control), with additional environments considered if resources allow. We plan to train lightweight DreamerV3 models from scratch and evaluate performance and sample efficiency across multiple random seeds.
+
+## Distractors
+
+| Parameter | Flag | Default |
+|---|---|---|
+| Distractor type | `--distractors.type` | `none` (`random`, `predictable`, `constant`) |
+| Number of distractors `k` | `--distractors.k` | `0` |
+| Sinusoid periods (predictable) | `--distractors.period_min/max` | `10` / `100` steps |
+
+The distractors are a separate observation key, so their reconstruction loss
+is logged on its own as `train/loss/distractors`. They are seeded by `--seed`.
+See [embodied/envs/distractors.py](embodied/envs/distractors.py) for the exact
+definitions and seeding.
+
+## Tests
+
+Unit tests of the distractor wrapper (need only `numpy`, `elements`, `pytest`):
+
+```
+python -m pytest tests/ -q
+```
 
 ## References
 
