@@ -121,7 +121,7 @@ class Agent(embodied.jax.Agent):
         dyn_carry, tokens, prevact, reset, **kw)
     dec_entry = {}
     if dec_carry:
-      dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
+       dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
     policy = self.pol(self.feat2tensor(feat), bdims=1)
     act = sample(policy)
     out = {}

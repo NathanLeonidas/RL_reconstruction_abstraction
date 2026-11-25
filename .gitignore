@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ipynb_checkpoints/
+.gitignore
+.env/
+.local_runs/runs/
+.local_runs/__marimo__/
+.local_runs/results/
+
