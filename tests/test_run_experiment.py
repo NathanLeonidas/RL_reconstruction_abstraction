@@ -21,7 +21,7 @@ def test_command_contains_our_settings(tmp_path):
       '--w', '0.5', '--distractors', 'random', '--k', '64', '--seed', '3',
       '--profile', 'gpu', '--device', 'cuda'])
   command = ' '.join(run_experiment.build_command(args, tmp_path))
-  assert run_experiment.run_name(args) == 'w0.5_random_k64_s3'
+  assert run_experiment.run_name(args) == 'w0.5_random_k64_s3_gpu'
   for flag in ['--agent.loss_scales.rec 0.5', '--distractors.type random',
                '--distractors.k 64', '--seed 3', '--run.train_ratio 1024',
                '--script train']:
@@ -50,3 +50,10 @@ def test_export_results(tmp_path):
   assert summary['final_score'] == 50.0  # mean of the last 5: 30..70
   assert (tmp_path / 'losses.csv').read_text().splitlines() == [
       'step,rew', '500,2.0']
+
+
+def test_profiles_get_different_folders():
+  # A smoke test must not share its folder (and checkpoint) with a gpu run.
+  smoke = run_experiment.parse_args(['--profile', 'smoke'])
+  gpu = run_experiment.parse_args(['--profile', 'gpu'])
+  assert run_experiment.run_name(smoke) != run_experiment.run_name(gpu)

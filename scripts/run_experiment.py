@@ -33,7 +33,7 @@ Usage (from the repository root)
 
 Running the same command again resumes the run from its last checkpoint.
 
-What you get, in runs/<run name>/ (e.g. runs/w0.5_random_k64_s3/)
+What you get, in runs/<run name>/ (e.g. runs/w0.5_random_k64_s3_gpu/)
 ------------------------------------------------------------------
   config.yaml, metrics.jsonl, scores.jsonl, ckpt/   written by DreamerV3
   scores.csv     one row per finished episode: step, score
@@ -121,10 +121,13 @@ def parse_args(argv=None):
 
 
 def run_name(args):
-  """Folder name of a run, e.g. w0.5_random_k64_s3.
+  """Folder name of a run, e.g. w0.5_random_k64_s3_gpu.
   Build the name from the arguments, so that the same settings always produce the same folder name.
+  The profile is part of the name: otherwise a smoke test and a gpu run with
+  the same settings would share a folder, and the gpu run would resume the
+  smoke checkpoint (and run_grid.py would skip it as already finished).
   """
-  return f'w{args.w:g}_{args.distractors}_k{args.k}_s{args.seed}'
+  return f'w{args.w:g}_{args.distractors}_k{args.k}_s{args.seed}_{args.profile}'
 
 
 def build_command(args, logdir):
